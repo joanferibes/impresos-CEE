@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>CEE — Impresos IVACE</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; max-width: 680px; margin: 0 auto; }
+h1 { background: #4A8A80; color: white; padding: 16px 20px; border-radius: 8px; font-size: 17px; margin-bottom: 20px; }
+.card { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 18px; margin-bottom: 14px; }
+.card h2 { color: #4A8A80; font-size: 14px; margin-bottom: 12px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.span2 { grid-column: 1 / -1; }
+label { font-size: 12px; color: #555; display: block; margin-bottom: 3px; }
+input { width: 100%; border: 1px solid #ccc; border-radius: 5px; padding: 7px 9px; font-size: 13px; }
+input:focus { outline: none; border-color: #4A8A80; }
+.upload-box { border: 2px dashed #ccc; border-radius: 8px; padding: 14px; text-align: center; cursor: pointer; font-size: 13px; color: #888; background: #fafafa; transition: border-color 0.2s; }
+.upload-box:hover { border-color: #4A8A80; color: #4A8A80; }
+.upload-box.ok { border-color: #4A8A80; color: #4A8A80; background: #f0f7f6; }
+.btns { display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+button { border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 14px; padding: 12px 16px; flex: 1; }
+.b1 { background: #4A8A80; }
+.b2 { background: #7AADA3; }
+.b3 { background: #2d6b61; width: 100%; margin-top: 8px; padding: 13px; font-size: 15px; }
+.breset { background: #aaa; flex: none; font-size: 12px; padding: 8px 14px; }
+.msg { border-radius: 6px; padding: 10px; margin: 10px 0; font-size: 13px; display: none; }
+.ok-msg { background: #e8f4f3; border: 1px solid #4A8A80; color: #2d6b61; }
+.err-msg { background: #fde8e8; border: 1px solid #e74c3c; color: #c0392b; }
+.note { font-size: 12px; color: #888; margin-top: 6px; }
+.spinner { display: none; color: #4A8A80; font-size: 13px; margin: 8px 0; }
+</style>
+</head>
+<body>
+
+<h1>📄 CEE — Impresos IVACE</h1>
+
+<div class="card">
+  <h2>1. DNI / NIE del propietario</h2>
+  <div class="upload-box" id="box-dni" onclick="document.getElementById('file-dni').click()">
+    📷 Haz clic para subir foto o PDF del DNI/NIE
+  </div>
+  <input type="file" id="file-dni" accept="image/*,application/pdf" style="display:none" onchange="procesarArchivo('dni', this)">
+  <div class="spinner" id="spin-dni">⏳ Extrayendo datos del DNI/NIE...</div>
+  <div style="margin-top:12px" id="campos-dni" style="display:none">
+    <div class="grid">
+      <div><label>Nombre</label><input id="nombre" placeholder="Nombre"></div>
+      <div><label>Apellidos</label><input id="apellidos" placeholder="Apellidos"></div>
+      <div><label>DNI / NIE</label><input id="dni" placeholder="X0000000A"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>2. Referencia catastral</h2>
+  <div class="upload-box" id="box-cat" onclick="document.getElementById('file-cat').click()">
+    📄 Haz clic para subir ficha catastral (PDF o foto)
+  </div>
+  <input type="file" id="file-cat" accept="image/*,application/pdf" style="display:none" onchange="procesarArchivo('cat', this)">
+  <div class="spinner" id="spin-cat">⏳ Extrayendo datos catastrales...</div>
+  <div style="margin-top:12px" id="campos-cat">
+    <div class="grid">
+      <div class="span2"><label>Referencia catastral</label><input id="refcat" placeholder="0000000AA0000A0000AA"></div>
+      <div class="span2"><label>Dirección completa</label><input id="direccion" placeholder="Calle, número, piso..."></div>
+      <div><label>Municipio</label><input id="municipio" placeholder="Dénia, Pedreguer..."></div>
+      <div><label>CP</label><input id="cp" placeholder="03700"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>3. Fecha de visita</h2>
+  <input id="fechavisita" placeholder="Déjalo vacío para usar la fecha de hoy">
+  <p class="note">La Delegación siempre lleva la fecha de hoy automáticamente.</p>
+</div>
+
+<div id="msg" class="msg"></div>
+
+<div class="btns">
+  <button class="b1" onclick="gen('acta')">📥 Acta de Visita</button>
+  <button class="b2" onclick="gen('delegacion')">📥 Delegación</button>
+</div>
+<button class="b3" onclick="gen('ambos')">📥 Descargar ambos PDFs</button>
+<div class="btns" style="margin-top:8px">
+  <button class="breset" onclick="limpiar()">🗑 Limpiar</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script>
+var TEC = { name: "JUAN FELIPE RIBES ARANDA", dni: "52786913G", ciudad: "PEDREGUER" };
+var MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+var API_KEY = "PON_AQUI_TU_API_KEY";
+
+function hoy() { var d = new Date(); return d.getDate() + " de " + MESES[d.getMonth()] + " de " + d.getFullYear(); }
+
+function showMsg(txt, esError) {
+  var el = document.getElementById("msg");
+  el.textContent = txt;
+  el.className = "msg " + (esError ? "err-msg" : "ok-msg");
+  el.style.display = "block";
+  if (!esError) setTimeout(function(){ el.style.display = "none"; }, 4000);
+}
+
+function fileToBase64(file) {
+  return new Promise(function(res, rej) {
+    var r = new FileReader();
+    r.onload = function() { res(r.result.split(",")[1]); };
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+async function procesarArchivo(tipo, input) {
+  var file = input.files[0];
+  if (!file) return;
+  var boxId = tipo === "dni" ? "box-dni" : "box-cat";
+  var spinId = tipo === "dni" ? "spin-dni" : "spin-cat";
+  document.getElementById(spinId).style.display = "block";
+  document.getElementById(boxId).className = "upload-box ok";
+  document.getElementById(boxId).textContent = "✅ " + file.name;
+
+  try {
+    var b64 = await fileToBase64(file);
+    var isPdf = file.type === "application/pdf";
+    var content = isPdf
+      ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
+         { type: "text", text: "Extrae datos. Responde SOLO JSON sin markdown:\nDNI/NIE: {\"nombre\":\"\",\"apellidos\":\"\",\"dni\":\"\",\"domicilio\":\"\",\"municipio\":\"\",\"cp\":\"\"}\nCatastral: {\"referencia_catastral\":\"\",\"direccion\":\"\",\"municipio\":\"\",\"cp\":\"\"}" }]
+      : [{ type: "image", source: { type: "base64", media_type: file.type, data: b64 } },
+         { type: "text", text: "Extrae datos. Responde SOLO JSON sin markdown:\nDNI/NIE: {\"nombre\":\"\",\"apellidos\":\"\",\"dni\":\"\",\"domicilio\":\"\",\"municipio\":\"\",\"cp\":\"\"}\nCatastral: {\"referencia_catastral\":\"\",\"direccion\":\"\",\"municipio\":\"\",\"cp\":\"\"}" }];
+
+    var resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: "claude-opus-4-6", max_tokens: 500, messages: [{ role: "user", content: content }] })
+    });
+    var data = await resp.json();
+    var text = data.content.map(function(b){ return b.text || ""; }).join("");
+    var result = JSON.parse(text.trim());
+
+    if (tipo === "dni") {
+      if (result.nombre) document.getElementById("nombre").value = result.nombre;
+      if (result.apellidos) document.getElementById("apellidos").value = result.apellidos;
+      if (result.dni) document.getElementById("dni").value = result.dni;
+      if (result.domicilio) document.getElementById("direccion").value = result.domicilio;
+      if (result.municipio) document.getElementById("municipio").value = result.municipio;
+      if (result.cp) document.getElementById("cp").value = result.cp;
+    } else {
+      if (result.referencia_catastral) document.getElementById("refcat").value = result.referencia_catastral;
+      if (result.direccion) document.getElementById("direccion").value = result.direccion;
+      if (result.municipio) document.getElementById("municipio").value = result.municipio;
+      if (result.cp) document.getElementById("cp").value = result.cp;
+    }
+  } catch(e) {
+    showMsg("Error al extraer datos: " + e.message, true);
+  }
+  document.getElementById(spinId).style.display = "none";
+}
+
+function limpiar() {
+  ["nombre","apellidos","dni","refcat","direccion","municipio","cp","fechavisita"].forEach(function(id){
+    document.getElementById(id).value = "";
+  });
+  ["box-dni","box-cat"].forEach(function(id){
+    var el = document.getElementById(id);
+    el.className = "upload-box";
+    el.textContent = id === "box-dni" ? "📷 Haz clic para subir foto o PDF del DNI/NIE" : "📄 Haz clic para subir ficha catastral (PDF o foto)";
+  });
+}
+
+function wrap(text, maxW, sz, fnt) {
+  var words = text.split(" "); var lines = []; var cur = "";
+  for (var i = 0; i < words.length; i++) {
+    var w = words[i]; var test = cur ? cur + " " + w : w;
+    if (fnt.widthOfTextAtSize(test, sz) <= maxW) { cur = test; }
+    else { if (cur) lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur); return lines;
+}
+
+function getDatos() {
+  return {
+    nombre: document.getElementById("nombre").value.trim(),
+    apellidos: document.getElementById("apellidos").value.trim(),
+    dni: document.getElementById("dni").value.trim(),
+    direccion: document.getElementById("direccion").value.trim(),
+    municipio: document.getElementById("municipio").value.trim(),
+    cp: document.getElementById("cp").value.trim(),
+    refcat: document.getElementById("refcat").value.trim(),
+    fechavisita: document.getElementById("fechavisita").value.trim() || hoy()
+  };
+}
+
+async function buildActa(d) {
+  var doc = await PDFLib.PDFDocument.create();
+  var B = await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+  var F = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+  var page = doc.addPage([595, 842]);
+  var ml = 56, maxW = 483, lh = 14, y = 786;
+  var black = PDFLib.rgb(0,0,0);
+
+  function dw(text, sz, fnt, indent, extra) {
+    indent = indent||0; extra = extra||0;
+    var lines = wrap(text, maxW-indent, sz, fnt);
+    for (var i = 0; i < lines.length; i++) {
+      page.drawText(lines[i], {x:ml+indent, y:y, size:sz, font:fnt, color:black});
+      y -= (lh+extra);
+    }
+  }
+  function gap(n){ y -= (n||8); }
+
+  var tit = "ACTA DE VISITA PREVIA A LA CERTIFICACIÓN ENERGÉTICA";
+  page.drawText(tit, {x:(595-B.widthOfTextAtSize(tit,11))/2, y:y, size:11, font:B, color:black}); y-=24; gap(4);
+  dw("En cumplimiento de lo dispuesto en el artículo 6 del Real Decreto 390/2021, de 1 de junio, por el que se aprueba el procedimiento básico para la certificación de la eficiencia energética de los edificios, que regula la certificación de la eficiencia energética de un edificio y en cuyo apartado 5 exige que durante el proceso de certificación, el técnico competente realizará al menos una visita al inmueble, con una antelación máxima de tres meses antes de la emisión del certificado, para realizar las tomas de datos, pruebas y comprobaciones necesarias para la correcta realización del certificado de eficiencia energética del edificio o de la parte del mismo, así como a los efectos de acreditar la veracidad en la expedición del certificado de eficiencia energética, teniendo en cuenta lo establecido en la Disposición adicional duodécima del Real Decreto Legislativo 7/2015, de 30 de octubre, por el que se aprueba el texto refundido de la Ley de Suelo y Rehabilitación Urbana, que prevé como infracción muy grave en el ámbito de la certificación de eficiencia energética de los edificios: Falsear la información en la expedición o registro de certificados de eficiencia energética.",9,F,0,1); gap();
+  dw("Se formaliza la presente ACTA DE VISITA en la que el propietario/promotor del inmueble sito en la siguiente dirección:",9,F,0,1); gap(4);
+  var dir = [d.direccion, d.municipio, d.cp?"CP "+d.cp:""].filter(Boolean).join(", ");
+  dw(dir||"___________________________________",9,B,0,1); gap(4);
+  dw("con referencia catastral número: "+(d.refcat||"___________________________")+", manifiesta, de manera fehaciente, que el técnico certificador "+TEC.name+" ha realizado una visita al inmueble objeto de certificación energética, el día "+d.fechavisita+".",9,F,0,1); gap();
+  dw("El propietario/promotor mediante la firma de la presente acta, conoce que el IVACE, es el órgano competente para la certificación de la eficiencia energética de edificios en la Comunitat Valenciana, así como para supervisar, entre otras, las actividades de trámite y registro de la certificación, y cuantas actividades de comprobación fueran necesarias para el cumplimiento de las disposiciones aplicables a la certificación energética de edificios, de conformidad con lo establecido en el Decreto 39/2015, de 2 de abril, del Consell, por el que se regula la certificación de la eficiencia energética de los edificios. Si IVACE comprobara, tras el correspondiente procedimiento, que no se ha realizado la visita al inmueble, con el consiguiente incumplimiento del procedimiento establecido en el artículo 6.5 del Real Decreto 390/2021, procederá a dar de baja el certificado de eficiencia energética en el registro de Certificación de Eficiencia Energética de Edificios de manera que no tendrá validez a efectos del cumplimiento del Real Decreto 390/2021, sin perjuicio de las infracciones derivadas de la Ley de Suelo y Rehabilitación Urbana que se pudieran producir.",9,F,0,1); gap(20);
+  dw("En "+TEC.ciudad+", a fecha "+hoy(),9,F); gap(44);
+  page.drawText("PROPIETARIO/PROMOTOR",{x:ml,y:y,size:9,font:B,color:black});
+  page.drawText("TÉCNICO CERTIFICADOR",{x:595-56-B.widthOfTextAtSize("TÉCNICO CERTIFICADOR",9),y:y,size:9,font:B,color:black}); y-=16;
+  var np = [d.nombre,d.apellidos].filter(Boolean).join(" ");
+  if(np) page.drawText(np,{x:ml,y:y,size:9,font:F,color:black});
+  page.drawText(TEC.name,{x:595-56-F.widthOfTextAtSize(TEC.name,9),y:y,size:9,font:F,color:black});
+  return await doc.save();
+}
+
+async function buildDelegacion(d) {
+  var doc = await PDFLib.PDFDocument.create();
+  var B = await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+  var F = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+  var page = doc.addPage([595, 842]);
+  var ml = 56, maxW = 483, lh = 15, y = 786;
+  var black = PDFLib.rgb(0,0,0);
+
+  function dw(text, sz, fnt, indent, extra) {
+    indent = indent||0; extra = extra||0;
+    var lines = wrap(text, maxW-indent, sz, fnt);
+    for (var i = 0; i < lines.length; i++) {
+      page.drawText(lines[i], {x:ml+indent, y:y, size:sz, font:fnt, color:black});
+      y -= (lh+extra);
+    }
+  }
+
+  var t1 = "DELEGACIÓN PARA LA TRAMITACIÓN ADMINISTRATIVA DE INSCRIPCIÓN DEL";
+  var t2 = "CERTIFICADO DE EFICIENCIA ENERGÉTICA DE EDIFICIOS EN EL REGISTRO DE CEE";
+  page.drawText(t1,{x:(595-B.widthOfTextAtSize(t1,10))/2,y:y,size:10,font:B,color:black}); y-=16;
+  page.drawText(t2,{x:(595-B.widthOfTextAtSize(t2,10))/2,y:y,size:10,font:B,color:black}); y-=36;
+
+  var np = [d.nombre,d.apellidos].filter(Boolean).join(" ")||"___________________________";
+  dw("Yo, D. "+np+", con D.N.I. nº: "+(d.dni||"___________")+", propietario de "+(d.direccion||"___________________________")+" con dirección "+(d.direccion||"___________________________")+" en el municipio de "+(d.municipio||"___________")+" con CP "+(d.cp||"_____")+" en la provincia de ALICANTE, por la presente, otorgo poder legal y suficiente a D. "+TEC.name+", con D.N.I. nº: "+TEC.dni+", para la realización de los trámites necesarios de inscripción del certificado de eficiencia energética en el registro de Certificación de Eficiencia Energética de Edificios de la Comunitat Valenciana, en cumplimiento de lo establecido en el artículo 6.6 del Real Decreto 390/2021, de 1 de junio, y del Decreto 39/2015, de 2 de abril, del Consell.",10,F,0,1);
+  y-=24;
+  dw("En "+TEC.ciudad+", a "+hoy(),10,F); y-=44;
+  page.drawText("Firma propietario:",{x:ml,y:y,size:10,font:B,color:black});
+  return await doc.save();
+}
+
+function dl(bytes, name) {
+  var blob = new Blob([bytes],{type:"application/pdf"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a"); a.href=url; a.download=name; a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function gen(tipo) {
+  var d = getDatos();
+  try {
+    if(tipo==="acta"||tipo==="ambos") dl(await buildActa(d),"Acta_Visita_Previa_CEE.pdf");
+    if(tipo==="delegacion"||tipo==="ambos") dl(await buildDelegacion(d),"Delegacion_CEE.pdf");
+    showMsg("✅ PDF descargado correctamente.", false);
+  } catch(e) { showMsg("❌ Error: "+e.message, true); }
+}
+</script>
+</body>
+</html>
